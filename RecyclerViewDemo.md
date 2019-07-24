@@ -5,12 +5,50 @@
 - createViewHolder调用的并不频繁，一旦创建了足够多的ViewHolder，RecyclerView就会停止调用createViewHolder，通过回收利用旧的ViewHolder节约时间和内存。
 
 ## RecyclerView中Adapter子类和ViewHolder子类的具体实现
+- 初始化onCreateView，绑定具体的RecyclerView
 ```java
-public void onResume(){
+@Override
+    public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState){
+        View view = inflater.inflate(R.layout.fragment_crime_list, container, false);
+        mCrimeRecycleView = view.findViewById(R.id.crime_recycle_view); //绑定recyclerView
+        mCrimeRecycleView.setLayoutManager(new LinearLayoutManager(getActivity()));
+        onResume();
+        return view;
+    }
+    @Override
+    public void onResume(){
         super.onResume();
         updateUI();
 
     }
 ```
+- 实现RecyclerView.Adapter,具体在Adapter中实现onCreateViewHolder和onBindViewHolder功能，一是创建具体的ViewHolder并返回对象，二是绑定模型层数据。
+```java
+private class CrimeAdapter extends RecyclerView.Adapter<CrimeHolder> {
+        private List<Crime> mCrimes;
 
+        public CrimeAdapter(List<Crime> crimes) {
+            this.mCrimes = crimes;
+        }
+
+        public CrimeHolder onCreateViewHolder(ViewGroup parent, int viewType) {
+            LayoutInflater layoutInflater = LayoutInflater.from(getActivity());
+            View view = layoutInflater.inflate(R.layout.list_item_crime, parent, false);
+            return new CrimeHolder(view);
+        }
+
+        @Override
+        public void onBindViewHolder(CrimeHolder holder, int position) {
+            Crime crime = mCrimes.get(position);
+            //holder.mTitleTextView.setText(crime.getmTitle());
+            holder.bindCrime(crime);
+            //updateUI();
+        }
+
+        @Override
+        public int getItemCount() {
+            return crimes.size();
+        }
+    }
+```
 
