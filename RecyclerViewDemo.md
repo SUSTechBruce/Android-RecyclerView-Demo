@@ -51,4 +51,103 @@ private class CrimeAdapter extends RecyclerView.Adapter<CrimeHolder> {
         }
     }
 ```
+- 实现RecyclerView.Viewholder,并继承View.onClickListener，实现前端数据绑定，逻辑结构
+```java
+private class CrimeHolder extends RecyclerView.ViewHolder implements View.OnClickListener { // 定义ViewHolder内部类
+        //public TextView mTitleTextView;
+        private TextView mTitleTextView;
+        private TextView mDataTextView;
+        private CheckBox mSolvedCheckBox;
+        private Crime mCrime;
+        private Switch aSwitch;
+
+        @Override
+        public void onClick(View v){
+            Intent intent = new Intent(getActivity(), CrimeActivity.class);
+            startActivity(intent);
+        }
+
+        private CrimeHolder(View itemView) {
+            super(itemView);
+            mTitleTextView = itemView.findViewById(R.id.list_item_crime_title_text_view);
+            mDataTextView = itemView.findViewById(R.id.list_item_crime_date_text_view);
+            itemView.setOnClickListener(this);
+            aSwitch = itemView.findViewById(R.id.switch1);
+            aSwitch.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+                @Override
+                public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+                    if (aSwitch.isChecked()) {
+                        mCrime.setmSovled(true);
+                        aSwitch.setChecked(true);
+                        rehash(crimes, mCrime);
+
+                    } else if (!aSwitch.isChecked() && mCrime.getnID() == 0) {
+                        mCrime.setmSovled(false);
+                        aSwitch.setChecked(false);
+                        rehash(crimes, mCrime);
+                    } else if (!aSwitch.isChecked() && mCrime.getnID() != 0) {
+                        mCrime.setmSovled(false);
+                        aSwitch.setChecked(false);
+                        rehash(crimes, mCrime);
+                    }
+
+                    if (aSwitch.isChecked() && mCrime.getnID() != 0) {
+                        judge_all(crimes);
+                    }
+                }
+
+            });
+        }
+        private void bindCrime(final Crime crime) {
+            mCrime = crime;
+            mTitleTextView.setText(mCrime.getmTitle());
+            mDataTextView.setText(mCrime.getmData().toString());
+            aSwitch.setChecked(crime.ismSovled());
+        }
+
+        private void rehash(List<Crime> mCrimes, Crime mCrime) {
+            if (mCrimes.get(0).ismSovled() && mCrime.getnID() == 0) { // All open
+                for (Crime crime : mCrimes) {
+                    crime.setmSovled(true);
+                }
+            }
+            if (!mCrimes.get(0).ismSovled() && mCrime.getnID() == 0) {  //全按钮关闭且id为0
+                for (Crime crime : mCrimes) {
+                    crime.setmSovled(false);
+                }
+            }
+            if (mCrimes.get(0).ismSovled() && mCrime.getnID() != 0) {
+                mCrimes.get(0).setmSovled(false);
+            }
+
+            //All down
+        }
+    }
+
+    public void judge_all(List<Crime> mCrimes) {
+        int count = 0;
+        for (int i = 1; i < mCrimes.size(); i++) {
+            if (mCrimes.get(i).ismSovled()) {
+                count += 1;
+            }
+        }
+        if (count == mCrimes.size() - 1) {
+            mCrimes.get(0).setmSovled(true);
+        }
+    }
+
+```
+- 将ViewHolder类写在Adapter中，方便数据更新时局部刷新
+```java
+private class CrimeAdapter extends RecyclerView.Adapter<CrimeAdapter.CrimeHolder>{
+        public class CrimeHolder extends RecyclerView.ViewHolder implements View.OnClickListener{ // 定义ViewHolder内部类
+```
+
+```java
+mAdapter = new CrimeAdapter(crimes);
+mAdapter.notifyDataSetChanged();
+```
+
+
+
 
