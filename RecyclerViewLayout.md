@@ -137,7 +137,8 @@ rv.addItemDecoration(new MDStaggeredRvDividerDecotation(this)); //设置样式
                 v.getContext().startActivity(intent);
                 Log.e("App", "Touch successful");
             }else{
-                Toast.makeText(v.getContext(), "你已经点击该功能:"+ mApps.get(getAdapterPosition()).getName(), Toast.LENGTH_SHORT ).show();
+                Toast.makeText(v.getContext(), 
+                "你已经点击该功能:"+ mApps.get(getAdapterPosition()).getName(), Toast.LENGTH_SHORT ).show();
             }
         }
 ```
