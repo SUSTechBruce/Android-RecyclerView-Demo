@@ -1,7 +1,7 @@
 ## 2019/7/24
 ## RecyclerView的技术优点
 - RecyclerView封装了viewHolder的复用功能，并且RecyclerView标准化了ViewHolder，编写Adapter面向的也是ViewHolder而不再是View。
-- RecyclerView使用能很方便的实现和转换各种布局，可设置布局管理器控制item的布局方式，通常有横向horizontal布局，纵向vertical布局以及gridLayout和staggeringLayout瀑布流布局，可以通过`LinearLayoutManager/GridLayoutManager/StaggeredGridLayoutManager`进行控制，
+- RecyclerView使用能很方便的实现和转换各种布局，可设置布局管理器控制item的布局方式，通常有横向horizontal布局，纵向vertical布局以及gridLayout和staggeringLayout瀑布流布局，可以通过`LinearLayoutManager`,`GridLayoutManager`,`StaggeredGridLayoutManager`进行控制，
 ```java
 LinearLayoutManager layoutManager = new LinearLayoutManager(this ); 
 recyclerView.setLayoutManager(layoutManager); 
