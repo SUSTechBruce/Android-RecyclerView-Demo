@@ -21,11 +21,11 @@
 ```java
 recyclerView = (RecyclerView) findViewById(R.id.recyclerView);  
 LinearLayoutManager layoutManager = new LinearLayoutManager(this);  // //设置布局管理器  
-recyclerView.setLayoutManager(layoutManager);  //设置为垂直布局
-layoutManager.setOrientation(OrientationHelper. VERTICAL);  //设置Adapter  
-recyclerView.setAdapter( recycleAdapter);   //设置分隔线  
-recyclerView.addItemDecoration( new DividerGridItemDecoration(this ));  //设置增加或删除条目的动画  
-recyclerView.setItemAnimator( new DefaultItemAnimator());
+recyclerView.setLayoutManager(layoutManager); 
+layoutManager.setOrientation(OrientationHelper. VERTICAL);  //设置为垂直布局 
+recyclerView.setAdapter( recycleAdapter);  //设置Adapter  
+recyclerView.addItemDecoration( new DividerGridItemDecoration(this ));  //设置分隔线    
+recyclerView.setItemAnimator( new DefaultItemAnimator());//设置增加或删除条目的动画  
 ```
 - 1. 根据常规应用的主线代码，首先调用`recyclerView = (RecyclerView) findViewById(R.id.recyclerView);`,会触发RecyclerView源码执行构造方法`public RecyclerView(Context context, @Nullable AttributeSet attrs, int defStyle)`，代码首先进行一些列的初始化方法的调用，其中主要包括获取布局的属性obtainStyledAttributes，然后是关键的createLayoutManager
 ```java
@@ -45,7 +45,7 @@ if (attrs != null) {
         }
       }
 ```
-- 2. 在createLayoutManager方法中，首选判断布局的属性是否存在，如果布局文件中已经设置了布局管理器的类型，那么这里会通过反射的方式实例化出对应的布局管理器，最后将实例化的布局管理器设置到当前的RecyclerView中
+- 2. 在createLayoutManager方法中，首选判断布局的属性是否存在，如果为null，直接return。如果布局文件中已经设置了布局管理器的类型，那么这里会通过反射的方式实例化出对应的布局管理器，最后将实例化的布局管理器设置到当前的RecyclerView中
 
 ```java
 private void createLayoutManager(Context context, String className, AttributeSet attrs,
@@ -63,9 +63,9 @@ private void createLayoutManager(Context context, String className, AttributeSet
                         classLoader = context.getClassLoader();
                     }
                     //根据布局属性设置的layoutManager通过反射实例化layoutManager
-                    //------------------------------------------------
+                  //------------------------------------------------
                     Class<? extends LayoutManager> layoutManagerClass =
-                            classLoader.loadClass(className).asSubclass(LayoutManager.class);
+                           classLoader.loadClass(className).asSubclass(LayoutManager.class);
                     Constructor<? extends LayoutManager> constructor;
                     Object[] constructorArgs = null;
                     try {
@@ -90,4 +90,60 @@ private void createLayoutManager(Context context, String className, AttributeSet
         }
     }
 ```
+- 3. 调用setLayoutManager时，首先判断LayoutManager是不是和旧的一样，一样就直接返回。接着调用stopScroll，停止当前滚动。判断新的Layout，如果不为空，则调用mItemAnimator.endAnimations()停止所有item当前的动画，并调用removeAndRecycleAllViews(mRecycler)和removeAndRecycleScrapInt(mRecycler)分别对所有的view进和scrapInt进行移除和回收。判断RecyclerView是否已经attach到window上，为true则调用dispatchDetachedFromWindow(this, mRecycler)方法。之后，将Layoutmanager的RecyclerView设置为null，并调用removeAllViewsUnfiltered方法，移除RecyclerView所有child，并将新的layout赋值给mLayout。最后，调用mLayout.setRecyclerView(this)将新的RecyclerView调用给新的Layoutmanager的dispatchAttachedToWindow的方法，接着调用mRecycler.updateViewCacheSize()和
+ requestLayout()进行recyclerView内容上的绘制。
 
+```java
+public void setLayoutManager(@Nullable LayoutManager layout) {
+        if (layout == mLayout) {
+            return;
+        }
+        stopScroll();
+        // TODO We should do this switch a dispatchLayout pass and animate children. There is a good
+        // chance that LayoutManagers will re-use views.
+        if (mLayout != null) {
+            // end all running animations
+            if (mItemAnimator != null) {
+                mItemAnimator.endAnimations();
+            }
+            // 清空所有之前的缓存VIEW
+            mLayout.removeAndRecycleAllViews(mRecycler);
+            mLayout.removeAndRecycleScrapInt(mRecycler);
+            mRecycler.clear();
+
+            if (mIsAttached) {
+                mLayout.dispatchDetachedFromWindow(this, mRecycler);
+            }
+            mLayout.setRecyclerView(null);
+            mLayout = null;
+        } else {
+            mRecycler.clear();
+        }
+        // this is just a defensive measure for faulty item animators.
+        mChildHelper.removeAllViewsUnfiltered();
+        mLayout = layout;
+        if (layout != null) {
+            if (layout.mRecyclerView != null) {
+                throw new IllegalArgumentException("LayoutManager " + layout
+                        + " is already attached to a RecyclerView:"
+                        + layout.mRecyclerView.exceptionLabel());
+            }
+            mLayout.setRecyclerView(this);
+            if (mIsAttached) {
+                mLayout.dispatchAttachedToWindow(this);
+            }
+        }
+        mRecycler.updateViewCacheSize();
+        requestLayout(); //调用requestLayout进行绘制
+    }
+```
+- 4. 在接下来调用的requestLayout函数中，这个函数的核心功能是更新View，主要流程为
+```java
+1.View#requestLayout() --->
+2.ViewGroup#requestLayout() --->
+3.ViewRootImpl#requestLayout() --->
+4.ViewRootImpl#scheduleTraversals() --->
+5.ViewRootImpl#doTraversal() --->
+6.ViewRootImpl#performTraversals() --->
+```
+接着performTraversals（）会调用performMeasure() , performLayout() , performDraw()。
