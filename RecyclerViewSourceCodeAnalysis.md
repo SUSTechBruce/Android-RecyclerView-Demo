@@ -137,13 +137,205 @@ public void setLayoutManager(@Nullable LayoutManager layout) {
         requestLayout(); //调用requestLayout进行绘制
     }
 ```
-- 4. 在接下来调用的requestLayout函数中，这个函数的核心功能是更新View，主要流程为
+- 4. 在接下来调用的requestLayout函数中，这个函数的核心功能是更新View（View，ViewGroup的），主要流程为
 ```java
-1.View#requestLayout() --->
-2.ViewGroup#requestLayout() --->
-3.ViewRootImpl#requestLayout() --->
-4.ViewRootImpl#scheduleTraversals() --->
-5.ViewRootImpl#doTraversal() --->
-6.ViewRootImpl#performTraversals() --->
+1.View#requestLayout() 
+2.ViewGroup#requestLayout() --->调用父类的requestLayout，一直往上循环
+3.ViewRootImpl#requestLayout() --->入口方法，接下来执行scheduleTraversals
+4.ViewRootImpl#scheduleTraversals() --->执行mTraversalRunnable，这是一个Runnable多线程方法
+5.ViewRootImpl#doTraversal() --->TraversalRunnable 的定义。所以最后执行了doTraversal()
+6.ViewRootImpl#performTraversals() --->调用performMeasure() , performLayout() , performDraw()
 ```
-接着performTraversals（）会调用performMeasure() , performLayout() , performDraw()。
+在requestLayout的核心函数中，最重要的是performTraversals()调用的三个方法performMeasure() , performLayout() , performDraw(),这是View工作流程的核心方法，用来进行View的三大工作流程。
+```java
+private void performTraversals() {
+        ...
+    if (!mStopped) {
+        int childWidthMeasureSpec = getRootMeasureSpec(mWidth, lp.width);  // 1
+        int childHeightMeasureSpec = getRootMeasureSpec(mHeight, lp.height);
+        performMeasure(childWidthMeasureSpec, childHeightMeasureSpec);   //执行performMeasure方法    
+        }
+    }
+    if (didLayout) {
+        performLayout(lp, desiredWindowWidth, desiredWindowHeight); //执行performLayout方法
+        ...
+    }
+    if (!cancelDraw && !newSurface) {
+        if (!skipDraw || mReportNextDraw) {
+            if (mPendingTransitions != null && mPendingTransitions.size() > 0) {
+                for (int i = 0; i < mPendingTransitions.size(); ++i) {
+                    mPendingTransitions.get(i).startChangingAnimations();
+                }
+                mPendingTransitions.clear();
+            }
+            performDraw();                        //执行performDraw方法
+        }
+    }
+    ...
+}
+```
+a .在performMeasure方法中，直接调用View的measure方法，从ViewRootImpl回到了View。在调用requestLayout时，设置标识位mPrivateFlags = PFLAG_FORCE_LAYOUT，最总这个view会根据mPrivateFlags来判断是否要onMeasure方法
+```java
+public final void measure(int widthMeasureSpec, int heightMeasureSpec) {
+    ......
+    //requestLayout方法里有把mPrivateFlags  = PFLAG_FORCE_LAYOUT
+    final boolean forceLayout = (mPrivateFlags & PFLAG_FORCE_LAYOUT) == PFLAG_FORCE_LAYOUT;
+    final boolean specChanged = widthMeasureSpec != mOldWidthMeasureSpec
+            || heightMeasureSpec != mOldHeightMeasureSpec;
+    final boolean isSpecExactly = MeasureSpec.getMode(widthMeasureSpec) == MeasureSpec.EXACTLY
+            && MeasureSpec.getMode(heightMeasureSpec) == MeasureSpec.EXACTLY;
+    final boolean matchesSpecSize = getMeasuredWidth() == MeasureSpec.getSize(widthMeasureSpec)
+            && getMeasuredHeight() == MeasureSpec.getSize(heightMeasureSpec);
+    final boolean needsLayout = specChanged
+            && (sAlwaysRemeasureExactly || !isSpecExactly || !matchesSpecSize);
+    //依据forceLayout 和needsLayout决定是否要执行onMeasure
+    if (forceLayout || needsLayout) {
+        mPrivateFlags &= ~PFLAG_MEASURED_DIMENSION_SET;
+        resolveRtlPropertiesIfNeeded();
+        int cacheIndex = forceLayout ? -1 : mMeasureCache.indexOfKey(key);
+        if (cacheIndex < 0 || sIgnoreMeasureCache) {
+            // measure ourselves, this should set the measured dimension flag back
+            //出现了onMeasure
+            onMeasure(widthMeasureSpec, heightMeasureSpec);
+            mPrivateFlags3 &= ~PFLAG3_MEASURE_NEEDED_BEFORE_LAYOUT;
+        } 
+        //记住这里设置的标识位
+        mPrivateFlags |= PFLAG_LAYOUT_REQUIRED;
+        ......
+}
+```
+b. 接着，PrivateFlags |= PFLAG_LAYOUT_REQUIRED;，这个接下来onLayout会需要。在layout方法中，host是view，那么performLayout就执行了view的layout(), 这里根据条件执行onLayout，上一步执行measure时，mPrivateFlags |= PFLAG_LAYOUT_REQUIRED:
+```java
+private void performLayout(WindowManager.LayoutParams lp, int desiredWindowWidth,
+        int desiredWindowHeight) {
+        host.layout(0, 0, host.getMeasuredWidth(), host.getMeasuredHeight());
+        ......
+}
+public void layout(int l, int t, int r, int b) {
+    ......
+    boolean changed = isLayoutModeOptical(mParent) ?
+            setOpticalFrame(l, t, r, b) : setFrame(l, t, r, b);
+    if (changed || (mPrivateFlags & PFLAG_LAYOUT_REQUIRED) == PFLAG_LAYOUT_REQUIRED) {
+        onLayout(changed, l, t, r, b);
+       ......
+    }
+    ......
+}
+
+```
+c .在performDraw（）方法中，核心的逻辑顺序是performDraw()->draw()->drawSoftware()->view.draw()
+```java
+private void performDraw() {
+    ......
+        draw(fullRedrawNeeded); //首先调用draw（）
+     ......
+private void draw(boolean fullRedrawNeeded) {
+    ......
+    mAttachInfo.mDrawingTime =
+            mChoreographer.getFrameTimeNanos() / TimeUtils.NANOS_PER_MS;
+    if (!dirty.isEmpty() || mIsAnimating || accessibilityFocusDirty) {
+        ......
+        } else {
+            ......
+            if (!drawSoftware(surface, mAttachInfo, xOffset, yOffset, scalingRequired, dirty)) {  //draw中调用drawSoftWare
+                return;
+            }
+        }
+    }
+    ......
+}
+private boolean drawSoftware(Surface surface, AttachInfo attachInfo, int xoff, int yoff,
+        boolean scalingRequired, Rect dirty) {
+    final Canvas canvas;
+    try {
+        canvas = mSurface.lockCanvas(dirty);
+        .....
+    } catch (Surface.OutOfResourcesException e) {
+        handleOutOfResourcesException(e);
+        return false;
+    } catch (IllegalArgumentException e) {
+        mLayoutRequested = true;    // ask wm for a new surface next time.
+        return false;
+    }
+    try {
+        ......
+        try {
+            ......
+            mView.draw(canvas);      //在drawSoftware中调用view.draw（）
+            drawAccessibilityFocusedDrawableIfNeeded(canvas);
+        } finally {
+           ......
+        }
+    } finally {
+       ......
+    }
+    return true;
+}
+```
+在view.draw（）中，该函数完成的功能有:
+```
+          1. Draw the background （绘制背景）
+          2. If necessary, save the canvas' layers to prepare for fading
+          3. Draw view's content （绘制自身）
+          4. Draw children （绘制子view）
+          5. If necessary, draw the fading edges and restore layers
+          6. Draw decorations (scrollbars for instance)
+```
+```java
+public void draw(Canvas canvas) {
+    final int privateFlags = mPrivateFlags;
+    final boolean dirtyOpaque = (privateFlags & PFLAG_DIRTY_MASK) == PFLAG_DIRTY_OPAQUE &&
+            (mAttachInfo == null || !mAttachInfo.mIgnoreDirtyState);
+    mPrivateFlags = (privateFlags & ~PFLAG_DIRTY_MASK) | PFLAG_DRAWN;
+    int saveCount;
+    if (!dirtyOpaque) {
+        drawBackground(canvas);
+    }
+    final int viewFlags = mViewFlags;
+    boolean horizontalEdges = (viewFlags & FADING_EDGE_HORIZONTAL) != 0;
+    boolean verticalEdges = (viewFlags & FADING_EDGE_VERTICAL) != 0;
+    if (!verticalEdges && !horizontalEdges) {
+        if (!dirtyOpaque) onDraw(canvas);
+        dispatchDraw(canvas);
+        drawAutofilledHighlight(canvas);
+        if (mOverlay != null && !mOverlay.isEmpty()) {
+            mOverlay.getOverlayView().dispatchDraw(canvas);
+        }
+        onDrawForeground(canvas);
+        drawDefaultFocusHighlight(canvas);
+        if (debugDraw()) {
+            debugDrawFocus(canvas);
+        }
+        return;
+    }
+```
+- 5. 将
+```java
+recyclerView = (RecyclerView) findViewById(R.id.recyclerView);  
+LinearLayoutManager layoutManager = new LinearLayoutManager(this);  // //设置布局管理器  
+```
+的主线源码分析完之后，我们进入recyclerView.setLayoutManager（layoutManager），这是一种巧妙的“桥接模式”，因为layoutManager的实现是多种的，因为桥接模式可以实例化逻辑ConcreteImplementor
+```java
+- ListView功能 recyclerView.setLayoutManager（new LinearLayoutManager（this））；
+- 横向ListView的功能 recyclerView.setLayoutManager(new LinearLayoutManager(this)); layoutManager.setOrientation(…)
+- GridView功能 recyclerView.setLayoutManager（new GridLayoutManager（this，3））；
+- 瀑布流形式功能 recyclerView.setLayoutManager(new StaggeredGridLayoutManager(2, StaggeredGridLayoutManager.VERTICAL));
+```
+LinearLayoutManager/ StaggeredGridLayoutManager/GridLayoutManager的源码
+```java
+public LinearLayoutManager(Context context, int orientation, boolean reverseLayout) {
+    setOrientation(orientation);
+    setReverseLayout(reverseLayout);
+    setAutoMeasureEnabled(true);
+}
+public StaggeredGridLayoutManager(Context context, AttributeSet attrs, int defStyleAttr,
+        int defStyleRes) {
+    Properties properties = getProperties(context, attrs, defStyleAttr, defStyleRes);
+    setOrientation(properties.orientation);
+    setSpanCount(properties.spanCount);
+    setReverseLayout(properties.reverseLayout);
+    setAutoMeasureEnabled(mGapStrategy != GAP_HANDLING_NONE);
+    mLayoutState = new LayoutState();
+    createOrientationHelpers();
+}
+```
