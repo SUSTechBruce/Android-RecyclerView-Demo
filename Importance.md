@@ -12,7 +12,8 @@ private static boolean isAppForeground(Context context) {
             return false;
         }
         for (ActivityManager.RunningAppProcessInfo processInfo : runningAppProcessInfoList) {
-            if (processInfo.processName.equals(context.getPackageName()) && (processInfo.importance == ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND)) {
+            if (processInfo.processName.equals(context.getPackageName()) && 
+            (processInfo.importance == ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND)) {
                 return true;
             }
         }
