@@ -4,7 +4,8 @@
 ```java
 private static boolean isAppForeground(Context context) {
         ActivityManager activityManager = (ActivityManager) context.getSystemService(Service.ACTIVITY_SERVICE);
-        List<ActivityManager.RunningAppProcessInfo> runningAppProcessInfoList = activityManager.getRunningAppProcesses();
+        List<ActivityManager.RunningAppProcessInfo> runningAppProcessInfoList 
+        = activityManager.getRunningAppProcesses();
 
         if (runningAppProcessInfoList == null) {
             Log.d("runningAppProcess:", "runningAppProcessInfoList is null!");
