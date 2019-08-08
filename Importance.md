@@ -53,38 +53,74 @@ IMPORTANCE_VISIBLE
          */
         public static final int IMPORTANCE_FOREGROUND_SERVICE = 125;
 ```
+- onUidStateChanged:需要进程状态改变，调用RunningAppProcessInfo.procStateToImportanceForClient（）
+- procStateToImportanceForClient：将进程状态转为为对应的client IMPORTANCE_* constant，调用procStateToImportanceForTargetSdk，调用procStateToImportance，并根据targetSDK状态返回importance值
+- procStateToImportance，根据进程的状态转换为相对应的important值.
 
-
-
-important相关源码
+- important相关源码 onUidStateChanged -> procStateToImportanceForClient -> procStateToImportanceForTargetSdk-> procStateToImportance
 ```java
-public static int importanceToProcState(@Importance int importance) {
-            if (importance == IMPORTANCE_GONE) {
-                return PROCESS_STATE_NONEXISTENT;
-            } else if (importance >= IMPORTANCE_CACHED) {
-                return PROCESS_STATE_HOME;
-            } else if (importance >= IMPORTANCE_CANT_SAVE_STATE) {
-                return PROCESS_STATE_HEAVY_WEIGHT;
-            } else if (importance >= IMPORTANCE_TOP_SLEEPING) {
-                return PROCESS_STATE_TOP_SLEEPING;
-            } else if (importance >= IMPORTANCE_SERVICE) {
-                return PROCESS_STATE_SERVICE;
-           //--------------------------------------------------------------------------------    
-            } else if (importance >= IMPORTANCE_PERCEPTIBLE) {
-                return PROCESS_STATE_TRANSIENT_BACKGROUND;         //后台
-           //--------------------------------------------------------------------------------   
-           
-          //---------------------------------------------------------------------------------      
-            } else if (importance >= IMPORTANCE_VISIBLE) {
-                return PROCESS_STATE_IMPORTANT_FOREGROUND;
-            } else if (importance >= IMPORTANCE_TOP_SLEEPING_PRE_28) {
-                return PROCESS_STATE_IMPORTANT_FOREGROUND;  //前台
-          //-----------------------------------------------------------------------------------     
-          
-            } else if (importance >= IMPORTANCE_FOREGROUND_SERVICE) {
-                return PROCESS_STATE_FOREGROUND_SERVICE;
+
+public void onUidStateChanged(int uid, int procState, long procStateSeq) {
+            mListener.onUidImportance(uid, RunningAppProcessInfo.procStateToImportanceForClient(
+                    procState, mContext));
+        }
+        
+public static @Importance int procStateToImportanceForClient(int procState,
+                Context clientContext) {
+            return procStateToImportanceForTargetSdk(procState,
+                    clientContext.getApplicationInfo().targetSdkVersion);
+        }
+
+public static @Importance int procStateToImportanceForTargetSdk(int procState,
+                int targetSdkVersion) {
+            final int importance = procStateToImportance(procState);
+
+            // For pre O apps, convert to the old, wrong values.
+            if (targetSdkVersion < VERSION_CODES.O) {
+                switch (importance) {
+                    case IMPORTANCE_PERCEPTIBLE:
+                        return IMPORTANCE_PERCEPTIBLE_PRE_26;
+                    case IMPORTANCE_TOP_SLEEPING:
+                        return IMPORTANCE_TOP_SLEEPING_PRE_28;
+                    case IMPORTANCE_CANT_SAVE_STATE:
+                        return IMPORTANCE_CANT_SAVE_STATE_PRE_26;
+                }
+            }
+            return importance;
+        }
+**
+         * Convert a proc state to the correspondent IMPORTANCE_* constant.  If the return value
+         * will be passed to a client, use {@link #procStateToImportanceForClient}.
+         * @hide
+         */
+  
+public static @Importance int procStateToImportance(int procState) {
+            if (procState == PROCESS_STATE_NONEXISTENT) {
+                return IMPORTANCE_GONE;
+            } else if (procState >= PROCESS_STATE_HOME) {
+                return IMPORTANCE_CACHED;
+            } else if (procState == PROCESS_STATE_HEAVY_WEIGHT) {
+                return IMPORTANCE_CANT_SAVE_STATE;
+            } else if (procState >= PROCESS_STATE_TOP_SLEEPING) {
+                return IMPORTANCE_TOP_SLEEPING;
+            } else if (procState >= PROCESS_STATE_SERVICE) {
+                return IMPORTANCE_SERVICE;
+            } else if (procState >= PROCESS_STATE_TRANSIENT_BACKGROUND) {
+                return IMPORTANCE_PERCEPTIBLE;
+            } else if (procState >= PROCESS_STATE_IMPORTANT_FOREGROUND) {
+                return IMPORTANCE_VISIBLE;
+            } else if (procState >= PROCESS_STATE_FOREGROUND_SERVICE) {
+                return IMPORTANCE_FOREGROUND_SERVICE;
             } else {
-                return PROCESS_STATE_TOP;
+                return IMPORTANCE_FOREGROUND;
             }
         }
+        
+        public RunningAppProcessInfo() {
+            importance = IMPORTANCE_FOREGROUND;
+            importanceReasonCode = REASON_UNKNOWN;
+            processState = PROCESS_STATE_IMPORTANT_FOREGROUND;
+        }
+        
 ```
+
