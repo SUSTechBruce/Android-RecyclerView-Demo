@@ -53,11 +53,11 @@ IMPORTANCE_VISIBLE
          */
         public static final int IMPORTANCE_FOREGROUND_SERVICE = 125;
 ```
-- onUidStateChanged:需要进程状态改变，调用RunningAppProcessInfo.procStateToImportanceForClient（）
-- procStateToImportanceForClient：将进程状态转为为对应的client IMPORTANCE_* constant，调用procStateToImportanceForTargetSdk，调用procStateToImportance，并根据targetSDK状态返回importance值
-- procStateToImportance，根据进程的状态转换为相对应的important值.
-
 - important相关源码 onUidStateChanged -> procStateToImportanceForClient -> procStateToImportanceForTargetSdk-> procStateToImportance
+- `onUidStateChanged`:需要进程状态改变，调用`RunningAppProcessInfo.procStateToImportanceForClient（）`
+- `procStateToImportanceForClient`：将进程状态转为为对应的`client IMPORTANCE_* constant`，调用`procStateToImportanceForTargetSdk`，调用`procStateToImportance`，并根据`targetSDK`状态返回`importance`值
+- `procStateToImportance`，根据进程的状态转换为相对应的`important`值.
+
 ```java
 
 public void onUidStateChanged(int uid, int procState, long procStateSeq) {
