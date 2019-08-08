@@ -309,12 +309,7 @@ public void draw(Canvas canvas) {
         return;
     }
 ```
-- 5. 将
-```java
-recyclerView = (RecyclerView) findViewById(R.id.recyclerView);  
-LinearLayoutManager layoutManager = new LinearLayoutManager(this);  // //设置布局管理器  
-```
-的主线源码分析完之后，我们进入recyclerView.setLayoutManager（layoutManager），这是一种巧妙的“桥接模式”，因为layoutManager的实现是多种的，因为桥接模式可以实例化逻辑ConcreteImplementor
+- 5. 我们进入recyclerView.setLayoutManager（layoutManager），这是一种巧妙的“桥接模式”，因为layoutManager的实现是多种的，因为桥接模式可以实例化逻辑ConcreteImplementor
 ```java
 - ListView功能 recyclerView.setLayoutManager（new LinearLayoutManager（this））；
 - 横向ListView的功能 recyclerView.setLayoutManager(new LinearLayoutManager(this)); layoutManager.setOrientation(…)
@@ -339,3 +334,268 @@ public StaggeredGridLayoutManager(Context context, AttributeSet attrs, int defSt
     createOrientationHelpers();
 }
 ```
+回到onMeasure（）函数的分析，可知初始化会设置AutoMeasurEnabled，RecyclerView会将测量与布局交给LayoutManager来做，并且LayoutManager有一个叫做mAutoMeasure的属性，这个属性用来控制LayoutManager是否开启自动测量，开启自动测量的话布局就交由RecyclerView使用一套默认的测量机制，否则，自定义的LayoutManager需要重写onMeasure来处理自身的测量工作。如下为onMeasure（）的重要部分源码以及分析：
+```java
+protected void onMeasure(int widthSpec, int heightSpec) {
+    ...
+    if (mLayout.mAutoMeasure) {
+        final int widthMode = MeasureSpec.getMode(widthSpec);
+        final int heightMode = MeasureSpec.getMode(heightSpec);
+        final boolean skipMeasure = widthMode == MeasureSpec.EXACTLY
+                && heightMode == MeasureSpec.EXACTLY;
+        mLayout.onMeasure(mRecycler, mState, widthSpec, heightSpec);
+        if (skipMeasure || mAdapter == null) {
+            return;
+        }
+        if (mState.mLayoutStep == State.STEP_START) {
+            dispatchLayoutStep1();
+        }
+        mLayout.setMeasureSpecs(widthSpec, heightSpec);
+        mState.mIsMeasuring = true;
+        dispatchLayoutStep2();
+        mLayout.setMeasuredDimensionFromChildren(widthSpec, heightSpec);
+        if (mLayout.shouldMeasureTwice()) {
+            mLayout.setMeasureSpecs(
+                    MeasureSpec.makeMeasureSpec(getMeasuredWidth(), MeasureSpec.EXACTLY),
+                    MeasureSpec.makeMeasureSpec(getMeasuredHeight(), MeasureSpec.EXACTLY));
+            mState.mIsMeasuring = true;
+            dispatchLayoutStep2();
+            mLayout.setMeasuredDimensionFromChildren(widthSpec, heightSpec);
+        }
+    }
+    ...
+}
+```
+首先，调用MeasureSpec.getMode()获取widthSpec和heightSpec等View的属性，之后，recyclerView的布局过程分为三步，其中，STEP_START表示即将开始布局，需要调用dispatchLayoutStep1来执行第一步布局，接下来，布局状态变为STEP_LAYOUT，表示接下来需要调用dispatchLayoutStep2里进行第二步布局，同理，第二步布局后状态变为STEP_ANIMATIONS，需要执行第三步布局dispatchLayoutStep3，因此，step1负责记录状态，step2负责布局，step3与step1进行比较，根据变化来触发动画。
+```java
+protected void onLayout(boolean changed, int l, int t, int r, int b) {
+    TraceCompat.beginSection(TRACE_ON_LAYOUT_TAG);
+    dispatchLayout();
+    TraceCompat.endSection();
+    mFirstLayoutComplete = true;
+}
+```
+- 接下来，我们分别分析dispatchLayout，dispatchLayout2，dispatchLayout3，因为在performLayout中，判断条件中调用了onLayout，onLayout中调用了dispatchLayout：
+```java
+void dispatchLayout() {
+    ...
+    mState.mIsMeasuring = false;
+    if (mState.mLayoutStep == State.STEP_START) {
+        dispatchLayoutStep1();
+        mLayout.setExactMeasureSpecsFrom(this);
+        dispatchLayoutStep2();
+    } else if (mAdapterHelper.hasUpdates() || mLayout.getWidth() != getWidth() ||mLayout.getHeight() != getHeight()) {
+        // First 2 steps are done in onMeasure but looks like we have to run again due to
+        // changed size.
+        mLayout.setExactMeasureSpecsFrom(this);
+        dispatchLayoutStep2();
+    } else {
+        // always make sure we sync them (to ensure mode is exact)
+        mLayout.setExactMeasureSpecsFrom(this);
+    }
+    dispatchLayoutStep3();
+}
+```
+1. 在 dispatchLayoutStep1()，step1的第一步目的就是在记录View的状态，首先遍历当前所有的View依次进行处理，mItemAnimator会根据每个View的信息封装成一个ItemHolderInfo，这个ItemHolderInfo中主要包含的就是当前View的位置状态等。然后ItemHolderInfo 就被存入mViewInfoStore中。接着调用addToPreLayout方法，该方法会根据holder来查询InfoRecord信息，如果没有，则生成，然后将info信息赋值给InfoRecord的preInfo变量。最后标记FLAG_PRE信息。
+```java
+private void dispatchLayoutStep2() {
+    ...
+    mLayout.onLayoutChildren(mRecycler, mState);
+     ...
+    mState.mLayoutStep = State.STEP_ANIMATIONS;
+}
+```
+2. dispatchLayoutStep2,核心的功能是真正地去布局View，其核心代码为onLayoutChildren方法，代码的核心功能为：
+```java
+- 寻找anchor点
+- 根据anchor点一直向前布局，直至填充满anchor点前的所有区域
+- 根据anchor一直向后布局，直至填充满anchor点后面的所有区域
+```
+```java
+private void dispatchLayoutStep3() {
+    mState.mLayoutStep = State.STEP_START;
+    if (mState.mRunSimpleAnimations) {
+        for (int i = mChildHelper.getChildCount() - 1; i >= 0; i--) {
+            ...
+            final ItemHolderInfo animationInfo = mItemAnimator
+                    .recordPostLayoutInformation(mState, holder);
+                mViewInfoStore.addToPostLayout(holder, animationInfo);
+        }
+        mViewInfoStore.process(mViewInfoProcessCallback);
+    }
+    ...
+}
+```
+3. dispatchLayoutStep3方法中，由于子View已经完成了布局，所以子View的信息都发生了变化，mItemAnimator调用的是recordPostLayoutInformation方法，而mViewInfoStore调用的是addToPostLayout方法,来记录布局后的状态。
+
+- 6. 在完成以上的测量，布局，测绘的任务后，setLayoutManager已经完成了，接下来主功能函数调用的是recyclerView.setAdapter( recycleAdapter); 
+分析其在源码中的代码：
+```java
+public static abstract class Adapter {
+    private final AdapterDataObservable mObservable = new AdapterDataObservable();
+    public void registerAdapterDataObserver(AdapterDataObserver observer) {
+        mObservable.registerObserver(observer);
+    }
+    public void unregisterAdapterDataObserver(AdapterDataObserver observer) {
+        mObservable.unregisterObserver(observer);
+    }
+    public final void notifyItemInserted(int position) {
+        mObservable.notifyItemRangeInserted(position, 1);
+    }
+}
+```
+RecyclerView的adapter的作用是就是完成了数据源datas 转化成 ItemView的工作，完成datas->Adapter->View的操作，通过`public abstract void onBindViewHolder(VH holder, int position);`将datas绑定到view中然后返回viewHolder，因此可以看到Adapter中包含一个AdapterDataObservable的对象mObservable，这个是一个可观察者，在可观察者中可以注册一系列的观察者AdapterDataObserver。当调用notify函数时候，就是可观察者发出通知，这时已经注册的观察者都可以收到这个通知，然后依次进行处理，因此，观察者注册的地方就是在RecyclerView的这个函数中。这个是setAdapter方法最终调用的地方。它主要做了
+```
+- 如果之前存在Adapter，先移除原来的，注销观察者，和从RecyclerView Detached。
+- 然后根据参数，决定是否清除原来的ViewHolder
+- 然后重置AdapterHelper，并更新Adapter，注册观察者。
+```
+```java
+public void setAdapter(Adapter adapter) {
+    // bail out if layout is frozen
+    setLayoutFrozen(false);
+    setAdapterInternal(adapter, false, true);
+    requestLayout();
+}
+```
+从setAdapterInternal的代码中得知，mObserver这个成员变量就是注册的观察者，该成员变量是一个RecyclerViewDataObserver的实例，那么RecyclerViewDataObserver实现了AdapterDataObserver中的方法。其中onItemRangeInserted(int positionStart, int itemCount)就是观察者接受到有数据插入通知的方法
+```java
+private class RecyclerViewDataObserver extends AdapterDataObserver {
+    ...
+    mPostUpdatesOnAnimation = version >= 16;
+    @Override
+    public void onItemRangeInserted(int positionStart, int itemCount) {
+        assertNotInLayoutOrScroll(null);
+        if (mAdapterHelper.onItemRangeInserted(positionStart, itemCount)) {
+            triggerUpdateProcessor();
+        }
+    }
+}
+```
+- RecyclerView的滑动功能
+```
+- 手指在屏幕上移动，使RecyclerView滑动的过程，可以称为scroll
+- 指离开屏幕，RecyclerView继续滑动一段距离的过程，可以称为fling
+```
+RecyclerView的触屏事件的源码：
+```java
+public boolean onTouchEvent(MotionEvent e) {
+    ...
+    if (mVelocityTracker == null) {
+        mVelocityTracker = VelocityTracker.obtain();
+    }
+    ...
+    switch (action) {
+        ...
+        case MotionEvent.ACTION_MOVE: {
+            ...
+            final int x = (int) (MotionEventCompat.getX(e, index) + 0.5f);
+            final int y = (int) (MotionEventCompat.getY(e, index) + 0.5f);
+            int dx = mLastTouchX - x;
+            int dy = mLastTouchY - y;
+            ...
+            if (mScrollState != SCROLL_STATE_DRAGGING) {
+                ...
+                if (canScrollVertically && Math.abs(dy) > mTouchSlop) {
+                    if (dy > 0) {
+                        dy -= mTouchSlop;
+                    } else {
+                        dy += mTouchSlop;
+                    }
+                    startScroll = true;
+                }
+                if (startScroll) {
+                    setScrollState(SCROLL_STATE_DRAGGING);
+                }
+            }
+            if (mScrollState == SCROLL_STATE_DRAGGING) {
+                mLastTouchX = x - mScrollOffset[0];
+                mLastTouchY = y - mScrollOffset[1];
+                if (scrollByInternal(
+                        canScrollHorizontally ? dx : 0,
+                        canScrollVertically ? dy : 0,
+                        vtev)) {
+                    getParent().requestDisallowInterceptTouchEvent(true);
+                }
+            }
+        } break;
+        ...
+        case MotionEvent.ACTION_UP: {
+            ...
+            final float yvel = canScrollVertically ?
+                    -VelocityTrackerCompat.getYVelocity(mVelocityTracker, mScrollPointerId) : 0;
+            if (!((xvel != 0 || yvel != 0) && fling((int) xvel, (int) yvel))) {
+                setScrollState(SCROLL_STATE_IDLE);
+            }
+            resetTouch();
+        } break;
+        ...
+    }
+    ...
+}
+public boolean fling(int velocityX, int velocityY) {
+    ...
+    mViewFlinger.fling(velocityX, velocityY);
+    ...
+}
+```
+核心步骤为
+```
+1. 当RecyclerView接收到ACTION_MOVE事件后，会先计算出手指移动距离（dy），并与滑动阀值（mTouchSlop）比较，当大于此阀值时将滑动状态设置为SCROLL_STATE_DRAGGING，而后调用scrollByInternal()方法，使RecyclerView滑动，这样RecyclerView的滑动的第一阶段scroll就完成了；
+2. 接收到ACTION_UP事件时，会根据之前的滑动距离与时间计算出一个初速度yvel，这步计算是由VelocityTracker实现的，然后再以此初速度，调用方法fling()，完成RecyclerView滑动的第二阶段fling
+```
+- 逻辑缓存是RecyclerView的关键特点，RecyclerView是多级缓存的，Recycler的作用就是重用ItemView。在填充ItemView的时候，ItemView是从它获取的；滑出屏幕的ItemView是由它回收的，关键的获取ItemView调用代码为：`RecyclerView.Recycler.getViewForPosition()`
+```java
+View getViewForPosition(int position, boolean dryRun) {
+    boolean fromScrap = false;
+    ViewHolder holder = null;
+    if (mState.isPreLayout()) {
+        holder = getChangedScrapViewForPosition(position);
+        fromScrap = holder != null;
+    }
+    if (holder == null) {
+        holder = getScrapViewForPosition(position, INVALID_TYPE, dryRun);
+       ...
+    }
+    if (holder == null) {
+        final int offsetPosition = mAdapterHelper.findPositionOffset(position);
+        final int type = mAdapter.getItemViewType(offsetPosition);
+        if (mAdapter.hasStableIds()) {
+            holder = getScrapViewForId(mAdapter.getItemId(offsetPosition), type, dryRun);
+        }
+        if (holder == null && mViewCacheExtension != null) {
+            final View view = mViewCacheExtension
+                    .getViewForPositionAndType(this, position, type);
+           ...
+        }
+        if (holder == null) { // fallback to recycler
+            holder = getRecycledViewPool().getRecycledView(type);
+            if (holder != null) {
+                holder.resetInternal();
+                if (FORCE_INVALIDATE_DISPLAY_LIST) {
+                    invalidateDisplayListInt(holder);
+                }
+            }
+        }
+        if (holder == null) {
+            holder = mAdapter.createViewHolder(RecyclerView.this, type);
+        }
+    }
+    return holder.itemView;
+}
+```
+代码的核心逻辑为
+```
+- 根据列表位置获取ItemView，先后从scrapped、cached、exCached、recycled集合中查找相应的ItemView，如果没有找到，就创建（Adapter.createViewHolder()），最后与数据集绑定。
+- scrapped、cached和exCached集合定义在RecyclerView.Recycler中，分别表示将要在RecyclerView中删除的ItemView、一级缓存ItemView和二级缓存ItemView，cached集合的大小默认为２，exCached是需要我们通过RecyclerView.ViewCacheExtension自己实现的.
+- recycled集合其实是一个Map,private SparseArray<ArrayList<ViewHolder>> mScrap = new SparseArray<ArrayList<ViewHolder>>();，定义在RecyclerView.RecycledViewPool中，将ItemView以ItemType分类保存了下来，这里算是RecyclerView设计上的亮点，通过RecyclerView.RecycledViewPool可以实现在不同的RecyclerView之间共享ItemView，只要为这些不同RecyclerView设置同一个RecyclerView.RecycledViewPool就可以了
+```
+```java
+public void onItemRangeRemoved(int positionStart, int itemCount) {
+    assertNotInLayoutOrScroll(null);
+    if (mAdapterHelper.onItemRangeRemoved(positionStart, itemCount)) {
+        triggerUpdateProcessor();
+    }
+}
+```
+View的回收并不像View的创建那么复杂，这里只涉及了两层缓存mCachedViews与mRecyclerPool，mCachedViews相当于一个先进先出的数据结构，每当有新的View需要缓存时都会将新的View存入mCachedViews，而mCachedViews则会移除头元素，并将头元素放入mRecyclerPool，所以mCachedViews相当于一级缓存，mRecyclerPool则相当于二级缓存，并且mRecyclerPool是可以多个RecyclerView共享的，这在类似于多Tab的新闻类应用会有很大的用处，因为多个Tab下的多个RecyclerView可以共用一个二级缓存。减少内存开销。
