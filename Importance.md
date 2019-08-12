@@ -1,4 +1,5 @@
- - task是android系统的一个activity的栈，包含多个app的activity，通过`ActivityManager`可以获取栈中的activity信息，从而判断activity对应`应用的状态`.
+## Importance关键的运用与源码的解析
+- task是android系统的一个activity的栈，包含多个app的activity，通过`ActivityManager`可以获取栈中的activity信息，从而判断activity对应`应用的状态`.
  
 - 判断前后台的方法1： 通过runningProcess获取到一个当前正在运行的进程的List，我们遍历这个List中的每一个进程，判断这个进程的一个importance 属性 是否是前台进程，并且包名是否与我们判断的APP的包名一样，如果这两个条件都符合，那么这个App就处于前台。 `IMPORTANCE_FOREGROUND == 100`
 ```java
@@ -125,4 +126,44 @@ public static @Importance int procStateToImportance(int procState) {
         }
         
 ```
-
+## Android进程状态的改变
+- 安卓存在的几种进程状态：前台进程，可见进程，后台进程，空进程
+- Android进程间优先级的变换，是根据应用组件的生命周期变化相关，以下事件会触发进程状态发生改变，主要包括：
+- ACTIVITY
+```java
+ActivityStackSupervisor.realStartActivityLocked:// 启动Activity
+ActivityStack.resumeTopActivityInnerLocked:// 恢复栈顶Activity
+ActivityStack.finishCurrentActivityLocked:// 结束当前Activity
+ActivityStack.destroyActivityLocked: //摧毁当前Activity
+```
+- SERVICE
+```java
+realStartServiceLocked: //启动服务
+bindServiceLocked:// 绑定服务(只更新当前app)
+unbindServiceLocked:// 解绑服务 (只更新当前app)
+bringDownServiceLocked:// 结束服务 (只更新当前app)
+sendServiceArgsLocked:// 在bringup或则cleanup服务过程调用 (只更新当前app)
+```
+- BROADCAST
+```java
+BQ.processNextBroadcast:// 处理下一个广播
+BQ.processCurBroadcastLocked:// 处理当前广播
+BQ.deliverToRegisteredReceiverLocked:// 分发已注册的广播 (只更新当前app)
+```
+- CONTENTPROVIDER
+```java
+AMS.removeContentProvider:// 移除provider
+AMS.publishContentProviders:// 发布provider (只更新当前app)
+AMS.getContentProviderImpl:// 获取provider (只更新当前app)
+```
+- PROCESS
+```java
+setSystemProcess:// 创建并设置系统进程
+addAppLocked:// 创建persistent进程
+attachApplicationLocked:// 进程创建后attach到system_server的过程;
+trimApplications:// 清除没有使用app
+appDiedLocked:// 进程死亡
+killAllBackgroundProcesses:// 杀死所有后台进程.即(ADJ>9或removed=true的普通进程)
+killPackageProcessesLocked:// 以包名的形式 杀掉相关进程;
+```
+`ACTIVITY,SERVICE,BROADCASR,CONTENTPROVIDER,PROCESS`，这些事件都会直接/间接调用`ActivityManagerService.java`中的`updateOomAdjLocked`的方法来更新进程的优先级，`updateOomAdjLocked `先通过 `computeOomAdjLocked` 方法负责计算进程的优先级，再通过调用`applyOomAdjLocked`应用进程的优先级。
