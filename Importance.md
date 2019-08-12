@@ -127,6 +127,8 @@ public static @Importance int procStateToImportance(int procState) {
         
 ```
 ## Android进程状态的改变
+
+- 进程有两个比较重要的状态值，即ProcessList.java->adj和ActivityManager.java->procState
 - 安卓存在的几种进程状态：前台进程，可见进程，后台进程，空进程
 - Android进程间优先级的变换，是根据应用组件的生命周期变化相关，以下事件会触发进程状态发生改变，主要包括：
 - ACTIVITY
@@ -165,5 +167,25 @@ trimApplications:// 清除没有使用app
 appDiedLocked:// 进程死亡
 killAllBackgroundProcesses:// 杀死所有后台进程.即(ADJ>9或removed=true的普通进程)
 killPackageProcessesLocked:// 以包名的形式 杀掉相关进程;
+```
+- ADJ的核心算法
+```java
+updateOomAdjLocked：更新adj，当目标进程为空，或者被杀则返回false；否则返回true;
+computeOomAdjLocked：计算adj，返回计算后RawAdj值;
+applyOomAdjLocked：应用adj，当需要杀掉目标进程则返回false；否则返回true。
+```
+- 使用computeOomAdjLocked计算进程adj值
+```java
+1. 空进程情况
+2. maxAdj<=0情况
+3. 前台的情况
+4. 非前台activity的情况
+5. adj > 2的情况
+6. HeavyWeightProces情况
+7. HomeProcess情况
+8. PreviousProcess情况
+9. 备份进程情况
+10. Service情况
+11. ContentProvider情况
 ```
 `ACTIVITY,SERVICE,BROADCASR,CONTENTPROVIDER,PROCESS`，这些事件都会直接/间接调用`ActivityManagerService.java`中的`updateOomAdjLocked`的方法来更新进程的优先级，`updateOomAdjLocked `先通过 `computeOomAdjLocked` 方法负责计算进程的优先级，再通过调用`applyOomAdjLocked`应用进程的优先级。
