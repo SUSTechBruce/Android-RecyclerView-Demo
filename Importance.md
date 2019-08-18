@@ -188,6 +188,9 @@ applyOomAdjLocked：应用adj，当需要杀掉目标进程则返回false；否�
 10. Service情况
 11. ContentProvider情况
 ```
+- updateOomAdjLocked的算法流程图
+
+- computeOomAdjLocked的算法流程图
 `ACTIVITY,SERVICE,BROADCASR,CONTENTPROVIDER,PROCESS`，这些事件都会直接/间接调用`ActivityManagerService.java`中的`updateOomAdjLocked`的方法来更新进程的优先级，`updateOomAdjLocked `先通过 `computeOomAdjLocked` 方法负责计算进程的优先级，再通过调用`applyOomAdjLocked`应用进程的优先级。
 ## startForegroundService和startForeground
 - ContextImpl.startServiceCommon()-->ActivityManagerService.startService()-->ActiveServices.startServiceLocked()
@@ -200,3 +203,6 @@ applyOomAdjLocked：应用adj，当需要杀掉目标进程则返回false；否�
 ```
 启动Service过程中，调用ActiveServices.bringUpServiceLocked()方法,然后会调用ActiveServices.sendServiceArgsLocked()，从而在
 5s之内调用Service.startForeground()
+- startForegroundService和startForeground的importance关键字转变的流程
+
+
